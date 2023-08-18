@@ -7,84 +7,81 @@
 use core::any::TypeId;
 use core::fmt;
 
-/// Trait implemented by a type which can dynamically provide values based on type.
-pub trait Provider {
-    /// Data providers should implement this method to provide *all* values they are able to
-    /// provide by using `demand`.
+/// Trait implemented by a type which can dynamically supply values based on type.
+pub trait Supplier {
+    /// Data suppliers should implement this method to supply *all* values they are able to
+    /// supply by using `demand`.
     ///
-    /// Note that the `provide_*` methods on `Demand` have short-circuit semantics: if an earlier
-    /// method has successfully provided a value, then later methods will not get an opportunity to
-    /// provide.
+    /// Note that the `supply_*` methods on `Demand` have short-circuit semantics: if an earlier
+    /// method has successfully supplied a value, then later methods will not get an opportunity to
+    /// supply.
     ///
     /// # Examples
     ///
-    /// Provides a reference to a field with type `String` as a `&str`, and a value of
+    /// Supplies a reference to a field with type `String` as a `&str`, and a value of
     /// type `i32`.
     ///
     /// ```rust
-    /// # #![feature(provide_any)]
-    /// use std::any::{Provider, Demand};
+    /// use supplier::{Supplier, Demand};
     /// # struct SomeConcreteType { field: String, num_field: i32 }
     ///
-    /// impl Provider for SomeConcreteType {
-    ///     fn provide<'a>(&'a self, demand: &mut Demand<'a>) {
-    ///         demand.provide_ref::<str>(&self.field)
-    ///             .provide_value::<i32>(self.num_field);
+    /// impl Supplier for SomeConcreteType {
+    ///     fn supply<'a>(&'a self, demand: &mut Demand<'a>) {
+    ///         demand.supply_ref::<str>(&self.field)
+    ///             .supply_value::<i32>(self.num_field);
     ///     }
     /// }
     /// ```
-    fn provide<'a>(&'a self, demand: &mut Demand<'a>);
+    fn supply<'a>(&'a self, demand: &mut Demand<'a>);
 }
 
-/// Request a value from the `Provider`.
+/// Request a value from the `Supplier`.
 ///
 /// # Examples
 ///
-/// Get a string value from a provider.
+/// Get a string value from a supplier.
 ///
 /// ```rust
-/// # #![feature(provide_any)]
-/// use std::any::{Provider, request_value};
+/// use supplier::{Supplier, request_value};
 ///
-/// fn get_string(provider: &impl Provider) -> String {
-///     request_value::<String>(provider).unwrap()
+/// fn get_string(supplier: &impl Supplier) -> String {
+///     request_value::<String>(supplier).unwrap()
 /// }
 /// ```
-pub fn request_value<'a, T>(provider: &'a (impl Provider + ?Sized)) -> Option<T>
+pub fn request_value<'a, T>(supplier: &'a (impl Supplier + ?Sized)) -> Option<T>
 where
     T: 'static,
 {
-    request_by_type_tag::<'a, tags::Value<T>>(provider)
+    request_by_type_tag::<'a, tags::Value<T>>(supplier)
 }
 
-/// Request a reference from the `Provider`.
+/// Request a reference from the `Supplier`.
 ///
 /// # Examples
 ///
-/// Get a string reference from a provider.
+/// Get a string reference from a supplier.
 ///
 /// ```rust
-/// # #![feature(provide_any)]
-/// use std::any::{Provider, request_ref};
+/// use supplier::{Supplier, request_ref};
 ///
-/// fn get_str(provider: &impl Provider) -> &str {
-///     request_ref::<str>(provider).unwrap()
+/// fn get_str(supplier: &impl Supplier) -> &str {
+///     request_ref::<str>(supplier).unwrap()
 /// }
 /// ```
-pub fn request_ref<'a, T>(provider: &'a (impl Provider + ?Sized)) -> Option<&'a T>
+pub fn request_ref<'a, T>(supplier: &'a (impl Supplier + ?Sized)) -> Option<&'a T>
 where
     T: 'static + ?Sized,
 {
-    request_by_type_tag::<'a, tags::Ref<tags::MaybeSizedValue<T>>>(provider)
+    request_by_type_tag::<'a, tags::Ref<tags::MaybeSizedValue<T>>>(supplier)
 }
 
-/// Request a specific value by tag from the `Provider`.
-fn request_by_type_tag<'a, I>(provider: &'a (impl Provider + ?Sized)) -> Option<I::Reified>
+/// Request a specific value by tag from the `Supplier`.
+fn request_by_type_tag<'a, I>(supplier: &'a (impl Supplier + ?Sized)) -> Option<I::Reified>
 where
     I: tags::Type<'a>,
 {
     let mut tagged = TaggedOption::<'a, I>(None);
-    provider.provide(tagged.as_demand());
+    supplier.supply(tagged.as_demand());
     tagged.0
 }
 
@@ -92,9 +89,9 @@ where
 // Demand and its methods
 ///////////////////////////////////////////////////////////////////////////////
 
-/// A helper object for providing data by type.
+/// A helper object for supplying data by type.
 ///
-/// A data provider provides values by calling this type's provide methods.
+/// A data supplier supplies values by calling this type's supply methods.
 #[cfg_attr(not(doc), repr(transparent))] // work around https://github.com/rust-lang/rust/issues/90435
 pub struct Demand<'a>(dyn Erased<'a> + 'a);
 
@@ -106,96 +103,88 @@ impl<'a> Demand<'a> {
         unsafe { &mut *(erased as *mut dyn Erased<'a> as *mut Demand<'a>) }
     }
 
-    /// Provide a value or other type with only static lifetimes.
+    /// Supply a value or other type with only static lifetimes.
     ///
     /// # Examples
     ///
-    /// Provides an `u8`.
+    /// Supplies an `u8`.
     ///
     /// ```rust
-    /// #![feature(provide_any)]
-    ///
-    /// use std::any::{Provider, Demand};
+    /// use supplier::{Supplier, Demand};
     /// # struct SomeConcreteType { field: u8 }
     ///
-    /// impl Provider for SomeConcreteType {
-    ///     fn provide<'a>(&'a self, demand: &mut Demand<'a>) {
-    ///         demand.provide_value::<u8>(self.field);
+    /// impl Supplier for SomeConcreteType {
+    ///     fn supply<'a>(&'a self, demand: &mut Demand<'a>) {
+    ///         demand.supply_value::<u8>(self.field);
     ///     }
     /// }
     /// ```
-    pub fn provide_value<T>(&mut self, value: T) -> &mut Self
+    pub fn supply_value<T>(&mut self, value: T) -> &mut Self
     where
         T: 'static,
     {
-        self.provide::<tags::Value<T>>(value)
+        self.supply::<tags::Value<T>>(value)
     }
 
-    /// Provide a value or other type with only static lifetimes computed using a closure.
+    /// Supply a value or other type with only static lifetimes computed using a closure.
     ///
     /// # Examples
     ///
-    /// Provides a `String` by cloning.
+    /// Supplies a `String` by cloning.
     ///
     /// ```rust
-    /// #![feature(provide_any)]
-    ///
-    /// use std::any::{Provider, Demand};
+    /// use supplier::{Supplier, Demand};
     /// # struct SomeConcreteType { field: String }
     ///
-    /// impl Provider for SomeConcreteType {
-    ///     fn provide<'a>(&'a self, demand: &mut Demand<'a>) {
-    ///         demand.provide_value_with::<String>(|| self.field.clone());
+    /// impl Supplier for SomeConcreteType {
+    ///     fn supply<'a>(&'a self, demand: &mut Demand<'a>) {
+    ///         demand.supply_value_with::<String>(|| self.field.clone());
     ///     }
     /// }
     /// ```
-    pub fn provide_value_with<T>(&mut self, fulfil: impl FnOnce() -> T) -> &mut Self
+    pub fn supply_value_with<T>(&mut self, fulfil: impl FnOnce() -> T) -> &mut Self
     where
         T: 'static,
     {
-        self.provide_with::<tags::Value<T>>(fulfil)
+        self.supply_with::<tags::Value<T>>(fulfil)
     }
 
-    /// Provide a reference. The referee type must be bounded by `'static`,
+    /// Supply a reference. The referee type must be bounded by `'static`,
     /// but may be unsized.
     ///
     /// # Examples
     ///
-    /// Provides a reference to a field as a `&str`.
+    /// Supplies a reference to a field as a `&str`.
     ///
     /// ```rust
-    /// #![feature(provide_any)]
-    ///
-    /// use std::any::{Provider, Demand};
+    /// use supplier::{Supplier, Demand};
     /// # struct SomeConcreteType { field: String }
     ///
-    /// impl Provider for SomeConcreteType {
-    ///     fn provide<'a>(&'a self, demand: &mut Demand<'a>) {
-    ///         demand.provide_ref::<str>(&self.field);
+    /// impl Supplier for SomeConcreteType {
+    ///     fn supply<'a>(&'a self, demand: &mut Demand<'a>) {
+    ///         demand.supply_ref::<str>(&self.field);
     ///     }
     /// }
     /// ```
-    pub fn provide_ref<T: ?Sized + 'static>(&mut self, value: &'a T) -> &mut Self {
-        self.provide::<tags::Ref<tags::MaybeSizedValue<T>>>(value)
+    pub fn supply_ref<T: ?Sized + 'static>(&mut self, value: &'a T) -> &mut Self {
+        self.supply::<tags::Ref<tags::MaybeSizedValue<T>>>(value)
     }
 
-    /// Provide a reference computed using a closure. The referee type
+    /// Supply a reference computed using a closure. The referee type
     /// must be bounded by `'static`, but may be unsized.
     ///
     /// # Examples
     ///
-    /// Provides a reference to a field as a `&str`.
+    /// Supplies a reference to a field as a `&str`.
     ///
     /// ```rust
-    /// #![feature(provide_any)]
-    ///
-    /// use std::any::{Provider, Demand};
+    /// use supplier::{Supplier, Demand};
     /// # struct SomeConcreteType { business: String, party: String }
     /// # fn today_is_a_weekday() -> bool { true }
     ///
-    /// impl Provider for SomeConcreteType {
-    ///     fn provide<'a>(&'a self, demand: &mut Demand<'a>) {
-    ///         demand.provide_ref_with::<str>(|| {
+    /// impl Supplier for SomeConcreteType {
+    ///     fn supply<'a>(&'a self, demand: &mut Demand<'a>) {
+    ///         demand.supply_ref_with::<str>(|| {
     ///             if today_is_a_weekday() {
     ///                 &self.business
     ///             } else {
@@ -205,15 +194,15 @@ impl<'a> Demand<'a> {
     ///     }
     /// }
     /// ```
-    pub fn provide_ref_with<T: ?Sized + 'static>(
+    pub fn supply_ref_with<T: ?Sized + 'static>(
         &mut self,
         fulfil: impl FnOnce() -> &'a T,
     ) -> &mut Self {
-        self.provide_with::<tags::Ref<tags::MaybeSizedValue<T>>>(fulfil)
+        self.supply_with::<tags::Ref<tags::MaybeSizedValue<T>>>(fulfil)
     }
 
-    /// Provide a value with the given `Type` tag.
-    fn provide<I>(&mut self, value: I::Reified) -> &mut Self
+    /// Supply a value with the given `Type` tag.
+    fn supply<I>(&mut self, value: I::Reified) -> &mut Self
     where
         I: tags::Type<'a>,
     {
@@ -223,8 +212,8 @@ impl<'a> Demand<'a> {
         self
     }
 
-    /// Provide a value with the given `Type` tag, using a closure to prevent unnecessary work.
-    fn provide_with<I>(&mut self, fulfil: impl FnOnce() -> I::Reified) -> &mut Self
+    /// Supply a value with the given `Type` tag, using a closure to prevent unnecessary work.
+    fn supply_with<I>(&mut self, fulfil: impl FnOnce() -> I::Reified) -> &mut Self
     where
         I: tags::Type<'a>,
     {
@@ -234,26 +223,24 @@ impl<'a> Demand<'a> {
         self
     }
 
-    /// Check if the `Demand` would be satisfied if provided with a
+    /// Check if the `Demand` would be satisfied if supplied with a
     /// value of the specified type. If the type does not match or has
-    /// already been provided, returns false.
+    /// already been supplied, returns false.
     ///
     /// # Examples
     ///
-    /// Check if an `u8` still needs to be provided and then provides
+    /// Check if an `u8` still needs to be supplied and then supplies
     /// it.
     ///
     /// ```rust
-    /// #![feature(provide_any)]
-    ///
-    /// use std::any::{Provider, Demand};
+    /// use supplier::{Supplier, Demand};
     ///
     /// struct Parent(Option<u8>);
     ///
-    /// impl Provider for Parent {
-    ///     fn provide<'a>(&'a self, demand: &mut Demand<'a>) {
+    /// impl Supplier for Parent {
+    ///     fn supply<'a>(&'a self, demand: &mut Demand<'a>) {
     ///         if let Some(v) = self.0 {
-    ///             demand.provide_value::<u8>(v);
+    ///             demand.supply_value::<u8>(v);
     ///         }
     ///     }
     /// }
@@ -269,33 +256,33 @@ impl<'a> Demand<'a> {
     ///     }
     /// }
     ///
-    /// impl Provider for Child {
-    ///     fn provide<'a>(&'a self, demand: &mut Demand<'a>) {
-    ///         // In general, we don't know if this call will provide
+    /// impl Supplier for Child {
+    ///     fn supply<'a>(&'a self, demand: &mut Demand<'a>) {
+    ///         // In general, we don't know if this call will supply
     ///         // an `u8` value or not...
-    ///         self.parent.provide(demand);
+    ///         self.parent.supply(demand);
     ///
     ///         // ...so we check to see if the `u8` is needed before
     ///         // we run our expensive computation.
     ///         if demand.would_be_satisfied_by_value_of::<u8>() {
     ///             if let Some(v) = self.an_expensive_computation() {
-    ///                 demand.provide_value::<u8>(v);
+    ///                 demand.supply_value::<u8>(v);
     ///             }
     ///         }
     ///
     ///         // The demand will be satisfied now, regardless of if
-    ///         // the parent provided the value or we did.
+    ///         // the parent supplied the value or we did.
     ///         assert!(!demand.would_be_satisfied_by_value_of::<u8>());
     ///     }
     /// }
     ///
     /// let parent = Parent(Some(42));
     /// let child = Child { parent };
-    /// assert_eq!(Some(42), std::any::request_value::<u8>(&child));
+    /// assert_eq!(Some(42), supplier::request_value::<u8>(&child));
     ///
     /// let parent = Parent(None);
     /// let child = Child { parent };
-    /// assert_eq!(Some(99), std::any::request_value::<u8>(&child));
+    /// assert_eq!(Some(99), supplier::request_value::<u8>(&child));
     /// ```
     pub fn would_be_satisfied_by_value_of<T>(&self) -> bool
     where
@@ -304,26 +291,24 @@ impl<'a> Demand<'a> {
         self.would_be_satisfied_by::<tags::Value<T>>()
     }
 
-    /// Check if the `Demand` would be satisfied if provided with a
+    /// Check if the `Demand` would be satisfied if supplied with a
     /// reference to a value of the specified type. If the type does
-    /// not match or has already been provided, returns false.
+    /// not match or has already been supplied, returns false.
     ///
     /// # Examples
     ///
-    /// Check if a `&str` still needs to be provided and then provides
+    /// Check if a `&str` still needs to be supplied and then supplies
     /// it.
     ///
     /// ```rust
-    /// #![feature(provide_any)]
-    ///
-    /// use std::any::{Provider, Demand};
+    /// use supplier::{Supplier, Demand};
     ///
     /// struct Parent(Option<String>);
     ///
-    /// impl Provider for Parent {
-    ///     fn provide<'a>(&'a self, demand: &mut Demand<'a>) {
+    /// impl Supplier for Parent {
+    ///     fn supply<'a>(&'a self, demand: &mut Demand<'a>) {
     ///         if let Some(v) = &self.0 {
-    ///             demand.provide_ref::<str>(v);
+    ///             demand.supply_ref::<str>(v);
     ///         }
     ///     }
     /// }
@@ -340,33 +325,33 @@ impl<'a> Demand<'a> {
     ///     }
     /// }
     ///
-    /// impl Provider for Child {
-    ///     fn provide<'a>(&'a self, demand: &mut Demand<'a>) {
-    ///         // In general, we don't know if this call will provide
+    /// impl Supplier for Child {
+    ///     fn supply<'a>(&'a self, demand: &mut Demand<'a>) {
+    ///         // In general, we don't know if this call will supply
     ///         // a `str` reference or not...
-    ///         self.parent.provide(demand);
+    ///         self.parent.supply(demand);
     ///
     ///         // ...so we check to see if the `&str` is needed before
     ///         // we run our expensive computation.
     ///         if demand.would_be_satisfied_by_ref_of::<str>() {
     ///             if let Some(v) = self.an_expensive_computation() {
-    ///                 demand.provide_ref::<str>(v);
+    ///                 demand.supply_ref::<str>(v);
     ///             }
     ///         }
     ///
     ///         // The demand will be satisfied now, regardless of if
-    ///         // the parent provided the reference or we did.
+    ///         // the parent supplied the reference or we did.
     ///         assert!(!demand.would_be_satisfied_by_ref_of::<str>());
     ///     }
     /// }
     ///
     /// let parent = Parent(Some("parent".into()));
     /// let child = Child { parent, name: "child".into() };
-    /// assert_eq!(Some("parent"), std::any::request_ref::<str>(&child));
+    /// assert_eq!(Some("parent"), supplier::request_ref::<str>(&child));
     ///
     /// let parent = Parent(None);
     /// let child = Child { parent, name: "child".into() };
-    /// assert_eq!(Some("child"), std::any::request_ref::<str>(&child));
+    /// assert_eq!(Some("child"), supplier::request_ref::<str>(&child));
     /// ```
     pub fn would_be_satisfied_by_ref_of<T>(&self) -> bool
     where
@@ -396,7 +381,7 @@ mod tags {
     //! for some very common types.
     //!
     //! Currently type tags are not exposed to the user. But in the future, if you want to use the
-    //! Provider API with more complex types (typically those including lifetime parameters), you
+    //! Supplier API with more complex types (typically those including lifetime parameters), you
     //! will need to write your own tags.
 
     use core::marker::PhantomData;
@@ -511,7 +496,7 @@ impl<'a> dyn Erased<'a> + 'a {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Provider, request_ref};
+    use crate::{request_ref, Supplier};
 
     struct Container {
         x: u8,
@@ -519,12 +504,12 @@ mod tests {
         z: Vec<u8>,
     }
 
-    impl Provider for Container {
-        fn provide<'a>(&'a self, demand: &mut crate::Demand<'a>) {
+    impl Supplier for Container {
+        fn supply<'a>(&'a self, demand: &mut crate::Demand<'a>) {
             demand
-                .provide_ref(&self.x)
-                .provide_ref(&*self.y)
-                .provide_ref(&*self.z);
+                .supply_ref(&self.x)
+                .supply_ref(&*self.y)
+                .supply_ref(&*self.z);
         }
     }
 
